@@ -1,0 +1,4 @@
+ for ($i = 1; $i -le 100; $i++) {
+    $response = Invoke-WebRequest -Uri $URL -UseBasicParsing
+    Write-Output ("Request {0}: HTTP Status {1}" -f $i, $response.StatusCode)
+ }
