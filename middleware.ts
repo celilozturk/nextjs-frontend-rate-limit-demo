@@ -1,59 +1,32 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-
-interface RateLimitData {
-  lastRequestTime: number;
-  requestCount: number;
-}
-
-const RATE_LIMIT = 10; // Number of requests allowed within 1 minute
-const TIME_WINDOW = 60 * 1000; // 1 minute in milliseconds
-
-// İn-memory rate limit data storage
-const rateLimits = new Map<string, RateLimitData>();
+import { rateLimiter } from './ratelimiter';
+import { authAndRole } from './authAndRole';
 
 export async function middleware(req: NextRequest) {
-  const ip = req.headers.get('x-forwarded-for') || 'unknown-ip'; // Get the IP address from headers
-  const now = Date.now();
+  console.log("middleware chain started");
 
-  let rateLimitData = rateLimits.get(ip);
+  // 1. Rate Limiting Check
+  const rateLimitResponse = await rateLimiter(req);
+  console.log("rateLimitChain response");
 
-  // If the Ip has never made a requestt before, create a new entry
-  if (!rateLimitData) {
-    rateLimitData = {
-      lastRequestTime: now,
-      requestCount: 1, // First request
-    };
-    rateLimits.set(ip, rateLimitData);
-    return NextResponse.next(); // Allow the first request
-  }
+  // If rate limit is exceeded, return the rate limit response immediately
+  if (rateLimitResponse.status === 429) return rateLimitResponse;
 
-    // If the time window has passed, reset the counter
-  if (now - rateLimitData.lastRequestTime > TIME_WINDOW) {
-    rateLimitData.lastRequestTime = now;
-    rateLimitData.requestCount = 1; // start a new time window
-  } else {
-    // If the time window has not passed, increment the request count
-    rateLimitData.requestCount += 1;
-  }
+  console.log("middleware chain run1");
 
-   // If the request count exceeds the limit, return an error response
-  if (rateLimitData.requestCount > RATE_LIMIT) {
-    return new NextResponse(
-      JSON.stringify({ message: 'Çok fazla istek! Lütfen biraz bekleyin.' }),
-      {
-        status: 429, // Too Many Requests
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
-  }
+  // 2. Authentication and Role Check
+  const authRoleResponse = await authAndRole(req);
+  console.log("middleware chain run2");
 
-  rateLimits.set(ip, rateLimitData); // Update the rate limit data
+  // If user is not authorized, return the auth response
+  if (authRoleResponse.status !== 200) return authRoleResponse;
 
-  return NextResponse.next(); // Proceed with the request
+  // Proceed with the request if all checks passed
+  return NextResponse.next();
 }
 
-// Specify which routes the middleware should apply to
+// Exclude images and static content from middleware
 export const config = {
-  matcher: '/:path*', // Apply to all routes
+  matcher: '/:path*', // Apply to all routes except static or image files
 };
